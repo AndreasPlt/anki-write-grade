@@ -1,0 +1,57 @@
+/* Write & Grade. Only the card's own tokens (notetypes/shared/style.css in the study
+   repo), so it follows light and night mode; the fallbacks cover any other card. */
+#wg-root {
+  text-align: left;
+  margin: 22px 0 0;
+  font-family: var(--font-ui, -apple-system, sans-serif);
+}
+#wg-root[data-side="back"] { margin: 16px 0 6px; }
+
+.wg-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  resize: none;
+  overflow: hidden;
+  font: inherit;
+  font-size: 20px;
+  line-height: 1.5;
+  padding: 10px 12px;
+  color: var(--ink, inherit);
+  background: transparent;
+  border: 1px solid var(--line, #d0d0d6);
+  border-radius: 8px;
+  outline: none;
+}
+.wg-input:focus { border-color: var(--c-zh, #336699); }
+.wg-help { font-size: 12px; color: var(--ink-3, #8d8d95); margin-top: 6px; }
+
+.wg-wait { font-size: 13px; color: var(--ink-3, #8d8d95); margin-top: 14px; }
+.wg-err  { font-size: 13px; color: var(--di-fg, #b8332f); margin-top: 14px; white-space: pre-wrap; }
+
+.wg-res {
+  margin-top: 14px;
+  padding: 2px 0 2px 14px;
+  border-left: 3px solid var(--ink-3, #8d8d95);
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--ink-2, #4a4a50);
+}
+.wg-res.wg-ok    { border-color: var(--g-a, #2E8540); }
+.wg-res.wg-off   { border-color: var(--g-b, #CC6600); }
+.wg-res.wg-wrong { border-color: var(--g-c, #CC0000); }
+.wg-verdict { font-size: 16px; font-weight: 600; color: var(--ink, #1b1b1d); }
+.wg-pass    { font-size: 13px; color: var(--ink-3, #8d8d95); }
+
+.wg-row { display: grid; grid-template-columns: 96px 1fr; gap: 10px; margin-top: 4px; }
+.wg-k {
+  font-size: 10px; font-weight: 700; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--ink-3, #8d8d95); padding-top: 5px;
+}
+.wg-v { font-size: 15px; line-height: 1.6; color: var(--ink-2, #4a4a50); }
+.wg-han { color: var(--c-zh, #336699); }
+
+.wg-you { margin-top: 0; align-items: baseline; }
+.wg-sent { font-size: 20px; color: var(--ink, #1b1b1d); margin-right: 12px; }
+.wg-sent .wg-han { color: inherit; }
+.wg-badge { font-size: 13px; color: var(--ink-3, #8d8d95); white-space: nowrap; }

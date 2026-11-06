@@ -1,0 +1,13 @@
+{
+    "note_type": "",
+    "card_type": "",
+    "fields": {},
+    "repo": "",
+    "rubric": "",
+    "log": "",
+    "log_target": "",
+    "log_sense": "",
+    "instructions": "",
+    "command": ["/opt/homebrew/bin/pi", "-p", "{prompt}", "--no-session", "--no-tools", "--no-context-files", "--no-extensions", "--no-skills", "--no-prompt-templates", "--offline", "--model", "deepseek/deepseek-flash", "--thinking", "low"],
+    "timeout_s": 60
+}
