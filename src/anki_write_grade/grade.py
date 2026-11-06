@@ -61,15 +61,21 @@ class Config:
         missing = [key for key in ("note_type", "card_type", "rubric") if not values.get(key)]
         if missing:
             raise ValueError("config: set " + ", ".join(missing))
-        fields = values.get("fields") or {}
-        if not isinstance(fields, Mapping) or not fields:
-            raise ValueError("config: fields must map card fields to labels")
+        fields = values.get("fields") or []
+        if not isinstance(fields, (list, tuple)) or not fields:
+            raise ValueError("config: fields must be a list of card fields, in order")
+        labels = values.get("labels") or {}
+        if not isinstance(labels, Mapping):
+            raise ValueError("config: labels must map card fields to the names the grader sees")
+        stray = [str(name) for name in labels if name not in fields]
+        if stray:
+            raise ValueError("config: labels for fields not in fields: " + ", ".join(stray))
         command = tuple(str(arg) for arg in values.get("command") or ())
         if not command:
             raise ValueError("config: command must be a non-empty list")
         if not any("{prompt}" in arg for arg in command):
             raise ValueError("config: command needs a {prompt} placeholder")
-        pairs = tuple((str(name), str(label or name)) for name, label in fields.items())
+        pairs = tuple((str(name), str(labels.get(name) or name)) for name in fields)
         return cls(
             note_type=str(values["note_type"]),
             card_type=str(values["card_type"]),

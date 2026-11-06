@@ -34,14 +34,8 @@ HINT: look at what sits between 再 and 也
 BASE = {
     "note_type": "Chinese Pattern",
     "card_type": "Production",
-    "fields": {
-        "Pattern": "Pattern",
-        "Function": "Function",
-        "Slots": "Slots",
-        "Use": "Use",
-        "Avoid": "Avoid",
-        "Disambiguation": "Similar",
-    },
+    "fields": ["Pattern", "Function", "Slots", "Use", "Avoid", "Disambiguation"],
+    "labels": {"Disambiguation": "Similar"},
     "rubric": "rubric.md",
     "command": ["cli", "{prompt}"],
 }
@@ -109,7 +103,12 @@ def test_prompt_has_instructions_rubric_target_situation_and_sentence():
 
 def test_prompt_follows_the_configured_fields_and_instructions():
     cfg = grade.Config.from_mapping(
-        {**BASE, "fields": {"Function": "", "Pattern": "Frame"}, "instructions": " Be strict. "}
+        {
+            **BASE,
+            "fields": ["Function", "Pattern"],
+            "labels": {"Function": "", "Pattern": "Frame"},
+            "instructions": " Be strict. ",
+        }
     )
     prompt = grade.build_prompt(cfg, "R", FIELDS, "", "句子")
     assert prompt.startswith("Be strict.\n\n")
@@ -170,8 +169,12 @@ def test_config_defaults_and_validation():
     for key in ("note_type", "card_type", "rubric"):
         with pytest.raises(ValueError, match=f"set {key}"):
             grade.Config.from_mapping({**BASE, key: ""})
-    with pytest.raises(ValueError, match="fields"):
-        grade.Config.from_mapping({**BASE, "fields": ["Pattern"]})
+    with pytest.raises(ValueError, match="fields must be a list"):  # the old object form
+        grade.Config.from_mapping({**BASE, "fields": {"Pattern": "Pattern"}})
+    with pytest.raises(ValueError, match="labels for fields not in fields: Use"):
+        grade.Config.from_mapping({**BASE, "fields": ["Pattern"], "labels": {"Use": "Usage"}})
+    with pytest.raises(ValueError, match="labels must map"):
+        grade.Config.from_mapping({**BASE, "labels": ["Similar"]})
     with pytest.raises(ValueError, match="non-empty"):
         grade.Config.from_mapping({**BASE, "command": []})
     with pytest.raises(ValueError, match="placeholder"):

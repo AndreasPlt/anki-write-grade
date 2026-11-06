@@ -1,6 +1,8 @@
 **note_type** / **card_type** — the cards that get the box: the note type's name and the template's name, exactly as Anki shows them. Required.
 
-**fields** — what the grader is told about the card: card field → the label it sees, in the order given. Empty fields are left out; HTML and `[sound:]` tags are stripped. Required.
+**fields** — what the grader is told about the card: the card fields, in the order it reads them. A list, not an object, because Anki's Config dialog sorts an object's keys when it saves. Empty fields are left out; HTML and `[sound:]` tags are stripped. Required.
+
+**labels** — another name for a field in what the grader sees, e.g. `{"Disambiguation": "Similar"}`. A field not listed goes by its own name.
 
 **repo** — the directory the CLI runs in; `rubric` and `log` are relative to it. `~` is expanded. Empty: your home folder.
 
