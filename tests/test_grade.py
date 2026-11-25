@@ -39,12 +39,18 @@ BASE = {
     "rubric": "rubric.md",
     "command": ["cli", "{prompt}"],
 }
-CFG = grade.Config.from_mapping(BASE)
+CFG = grade.Config.from_mapping(BASE).profiles[0]
 
 
-def config(tmp_path, **overrides) -> grade.Config:
+def profile(tmp_path, **overrides) -> grade.Profile:
+    """One profile, resolved the way the add-on resolves the card's profile."""
+    settings = {**BASE, "repo": str(tmp_path), **overrides}
+    return grade.Config.from_mapping(settings).profiles[0]
+
+
+def config(tmp_path, **overrides) -> grade.Profile:
     (tmp_path / "rubric.md").write_text("THE RUBRIC", encoding="utf-8")
-    return grade.Config.from_mapping({**BASE, "repo": str(tmp_path), **overrides})
+    return profile(tmp_path, **overrides)
 
 
 def test_parse_reads_the_rubric_lines():
@@ -109,7 +115,7 @@ def test_prompt_follows_the_configured_fields_and_instructions():
             "labels": {"Function": "", "Pattern": "Frame"},
             "instructions": " Be strict. ",
         }
-    )
+    ).profiles[0]
     prompt = grade.build_prompt(cfg, "R", FIELDS, "", "句子")
     assert prompt.startswith("Be strict.\n\n")
     assert "<target>\nFunction: no matter how" in prompt  # in the configured order
@@ -164,7 +170,7 @@ def test_config_defaults_and_validation():
     assert CFG.model_label() == "cli"
     model = grade.Config.from_mapping(
         {**BASE, "command": ["/bin/pi", "{prompt}", "--model", "m/x"]}
-    )
+    ).profiles[0]
     assert model.model_label() == "m/x"
     for key in ("note_type", "card_type", "rubric"):
         with pytest.raises(ValueError, match=f"set {key}"):
@@ -187,6 +193,78 @@ def test_the_shipped_config_names_what_to_set():
         values = json.load(shipped)
     with pytest.raises(ValueError, match="set note_type, card_type, rubric"):
         grade.Config.from_mapping(values)
+
+
+SECOND = {
+    "name": "Hanzi recall",
+    "note_type": "ZJU Hanzi",
+    "card_type": "Recall",
+    "fields": ["Hanzi", "Meaning"],
+    "rubric": "hanzi.md",
+}
+
+
+def test_a_config_without_profiles_is_one_profile():
+    config = grade.Config.from_mapping(BASE)
+    (only,) = config.profiles
+    assert (only.note_type, only.card_type) == ("Chinese Pattern", "Production")
+    assert only.name == "Chinese Pattern / Production"  # no name given
+    assert config.for_card("Chinese Pattern", "Production") is only
+    assert config.for_card("Chinese Pattern", "Recognition") is None
+
+
+def test_profiles_are_picked_by_note_type_and_template():
+    config = grade.Config.from_mapping({"command": ["cli", "{prompt}"], "profiles": [BASE, SECOND]})
+    first, second = config.profiles
+    assert config.for_card("Chinese Pattern", "Production") is first
+    assert config.for_card("ZJU Hanzi", "Recall") is second
+    assert config.for_card("ZJU Hanzi", "Production") is None  # the template must match
+    assert config.for_card("Other", "Recall") is None  # a note type no profile names
+
+
+def test_shared_keys_are_defaults_and_a_profile_replaces_them_wholesale(tmp_path):
+    command = ["cli", "--model", "m/x", "{prompt}"]
+    config = grade.Config.from_mapping(
+        {
+            "repo": str(tmp_path),
+            "command": command,
+            "timeout_s": 30,
+            "log": "shared.tsv",
+            "profiles": [
+                {**BASE, "command": ["cli", "{prompt}"], "log": ""},  # own CLI, no log
+                SECOND,  # keeps the shared log and CLI
+            ],
+        }
+    )
+    first, second = config.profiles
+    assert (first.repo, first.timeout_s, first.model_label()) == (str(tmp_path), 30, "cli")
+    assert (second.repo, second.timeout_s, second.model_label()) == (str(tmp_path), 30, "m/x")
+    assert (first.log, first.log_path) == ("", "")
+    assert second.log_path == os.path.join(str(tmp_path), "shared.tsv")
+    assert second.rubric_path == os.path.join(str(tmp_path), "hanzi.md")
+
+
+def test_two_profiles_may_not_grade_the_same_cards():
+    with pytest.raises(ValueError, match="two profiles grade the same cards .*twin"):
+        grade.Config.from_mapping({"profiles": [{**BASE, "name": "twin"}, {**BASE}]})
+
+
+def test_bad_profiles_are_named_in_the_error():
+    with pytest.raises(ValueError, match="profiles must be a non-empty list"):
+        grade.Config.from_mapping({**BASE, "profiles": []})
+    with pytest.raises(ValueError, match=r"profiles\[0\] must be an object"):
+        grade.Config.from_mapping({**BASE, "profiles": ["BASE"]})
+    with pytest.raises(ValueError, match="profile Hanzi recall: set rubric"):
+        grade.Config.from_mapping(
+            {"command": ["cli", "{prompt}"], "profiles": [{**SECOND, "rubric": ""}]}
+        )
+    with pytest.raises(ValueError, match=r"profile 1: fields must be a list"):
+        grade.Config.from_mapping(
+            {
+                "command": ["cli", "{prompt}"],
+                "profiles": [SECOND, {"note_type": "X", "card_type": "Y", "rubric": "x.md"}],
+            }
+        )
 
 
 def python_cli(script: str) -> list[str]:

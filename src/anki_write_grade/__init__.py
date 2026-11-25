@@ -1,9 +1,9 @@
 """Anki add-on: write a sentence on the front of a card and have an agent CLI grade it.
 
-On the configured note type and card type a box sits under the prompt. Enter sends the
-sentence, the prompt on screen and the configured fields to the CLI with your rubric;
-the verdict appears under the box, the attempt is logged, and after the flip it shows on
-the back above the reference.
+On every note type + card type a profile names, a box sits under the prompt. Enter sends
+the sentence, the prompt on screen and the profile's fields to the CLI with that
+profile's rubric; the verdict appears under the box, the attempt is logged, and after
+the flip it shows on the back above the reference.
 
 * :mod:`anki_write_grade.grade` - prompt, CLI run, parsing, the log; no Anki imports.
 * :mod:`anki_write_grade.web` - the HTML, CSS and JS added to the card.
@@ -61,11 +61,9 @@ def _config() -> grade.Config | None:
         return None
 
 
-def _applies(card, config: grade.Config) -> bool:
-    return (
-        card.note().note_type()["name"] == config.note_type
-        and card.template()["name"] == config.card_type
-    )
+def _profile(config: grade.Config, card) -> grade.Profile | None:
+    """The profile that grades this card, by the note type's and template's names."""
+    return config.for_card(card.note().note_type()["name"], card.template()["name"])
 
 
 def _cancel() -> None:
@@ -80,15 +78,18 @@ def _on_card_will_show(text: str, card, kind: str) -> str:
     if kind not in ("reviewQuestion", "reviewAnswer"):
         return text
     config = _config()
-    if config is None or not _applies(card, config):
+    if config is None:
+        return text
+    profile = _profile(config, card)
+    if profile is None:
         return text
     if kind == "reviewQuestion":
         _cancel()
         _attempt = None
-        return text + web.snippet("front", card.id, config.model_label(), None)
+        return text + web.snippet("front", card.id, profile.model_label(), None)
     if _attempt is None or _attempt.card_id != card.id:
         return text
-    return text + web.snippet("back", card.id, config.model_label(), _attempt.state())
+    return text + web.snippet("back", card.id, profile.model_label(), _attempt.state())
 
 
 def _on_js_message(handled: tuple[bool, Any], message: str, context: Any) -> tuple[bool, Any]:
@@ -105,17 +106,18 @@ def _on_js_message(handled: tuple[bool, Any], message: str, context: Any) -> tup
         return (True, None)
     config = _config()
     sentence = str(request.get("sentence") or "").strip()
-    if config is not None and sentence:
-        _start(config, card, sentence, str(request.get("situation") or ""))
+    profile = _profile(config, card) if config is not None else None
+    if profile is not None and sentence:
+        _start(profile, card, sentence, str(request.get("situation") or ""))
     return (True, None)
 
 
-def _start(config: grade.Config, card, sentence: str, situation: str) -> None:
+def _start(profile: grade.Profile, card, sentence: str, situation: str) -> None:
     global _attempt, _running
     tries = _attempt.tries if _attempt is not None and _attempt.card_id == card.id else 0
     _attempt = _Attempt(card.id, sentence, tries=tries)
     fields = dict(card.note().items())
-    check = grade.Check(config, fields, situation, sentence)
+    check = grade.Check(profile, fields, situation, sentence)
     _running = check
     _redraw(card.id)
 
@@ -129,7 +131,7 @@ def _start(config: grade.Config, card, sentence: str, situation: str) -> None:
             error = str(failure)
         if result is not None:
             try:
-                grade.log_attempt(config, fields, sentence, result)
+                grade.log_attempt(profile, fields, sentence, result)
             except OSError as failure:
                 error = f"graded, but not logged: {failure}"
         mw.taskman.run_on_main(lambda: _finish(check, card.id, result, error))

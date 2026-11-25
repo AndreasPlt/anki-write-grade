@@ -3,8 +3,12 @@
 The add-on hands this module the card's fields, the prompt that was on screen and my
 sentence. It wraps them around the grading rubric, runs the CLI once, parses the rubric's
 output lines and appends the attempts-log row. The rubric is read fresh on every check,
-so its file stays the only definition of how grading works; which note type, which
+so its file stays the only definition of how grading works; which note types, which
 fields and which rubric all come from the config.
+
+`Config` is the whole config: a list of `Profile`s, one per note type + card type. Every
+profile is its own note type, its own fields and its own rubric (and log and CLI, if
+wanted); the keys at the top of the config are the defaults each profile starts from.
 """
 
 from __future__ import annotations
@@ -43,7 +47,10 @@ class CheckCancelledError(Exception):
 
 
 @dataclass(frozen=True)
-class Config:
+class Profile:
+    """One note type + card type, and everything about how its cards are graded."""
+
+    name: str  # what the config calls this profile; only used in messages
     note_type: str
     card_type: str
     fields: tuple[tuple[str, str], ...]  # (card field, the label the grader sees), in order
@@ -57,28 +64,31 @@ class Config:
     timeout_s: float
 
     @classmethod
-    def from_mapping(cls, values: Mapping[str, Any]) -> Config:
+    def from_mapping(cls, values: Mapping[str, Any], where: str = "config") -> Profile:
+        """One profile out of its (already merged) config. `where` names it in errors."""
         missing = [key for key in ("note_type", "card_type", "rubric") if not values.get(key)]
         if missing:
-            raise ValueError("config: set " + ", ".join(missing))
+            raise ValueError(f"{where}: set " + ", ".join(missing))
         fields = values.get("fields") or []
         if not isinstance(fields, (list, tuple)) or not fields:
-            raise ValueError("config: fields must be a list of card fields, in order")
+            raise ValueError(f"{where}: fields must be a list of card fields, in order")
         labels = values.get("labels") or {}
         if not isinstance(labels, Mapping):
-            raise ValueError("config: labels must map card fields to the names the grader sees")
+            raise ValueError(f"{where}: labels must map card fields to the names the grader sees")
         stray = [str(name) for name in labels if name not in fields]
         if stray:
-            raise ValueError("config: labels for fields not in fields: " + ", ".join(stray))
+            raise ValueError(f"{where}: labels for fields not in fields: " + ", ".join(stray))
         command = tuple(str(arg) for arg in values.get("command") or ())
         if not command:
-            raise ValueError("config: command must be a non-empty list")
+            raise ValueError(f"{where}: command must be a non-empty list")
         if not any("{prompt}" in arg for arg in command):
-            raise ValueError("config: command needs a {prompt} placeholder")
+            raise ValueError(f"{where}: command needs a {{prompt}} placeholder")
         pairs = tuple((str(name), str(labels.get(name) or name)) for name in fields)
+        note_type, card_type = str(values["note_type"]), str(values["card_type"])
         return cls(
-            note_type=str(values["note_type"]),
-            card_type=str(values["card_type"]),
+            name=str(values.get("name") or f"{note_type} / {card_type}"),
+            note_type=note_type,
+            card_type=card_type,
             fields=pairs,
             repo=os.path.expanduser(str(values.get("repo") or "~")),
             rubric=str(values["rubric"]),
@@ -89,6 +99,10 @@ class Config:
             command=command,
             timeout_s=float(values.get("timeout_s", 60)),
         )
+
+    def matches(self, note_type: str, card_type: str) -> bool:
+        """Is this the profile for a card, by its note type's and template's names?"""
+        return self.note_type == note_type and self.card_type == card_type
 
     @property
     def rubric_path(self) -> str:
@@ -104,6 +118,53 @@ class Config:
             if flag == "--model":
                 return value
         return os.path.basename(self.command[0])
+
+
+@dataclass(frozen=True)
+class Config:
+    """The whole config: one profile per note type that gets graded.
+
+    The keys beside `profiles` are the defaults for every profile; a key inside a profile
+    replaces the default wholesale (an empty `log` there turns logging off for that
+    profile). A config without `profiles` is one profile, so the single-note-type shape
+    still works.
+    """
+
+    profiles: tuple[Profile, ...]
+
+    @classmethod
+    def from_mapping(cls, values: Mapping[str, Any]) -> Config:
+        if not isinstance(values, Mapping):
+            raise ValueError("config: expected an object with the settings")
+        shared = {key: value for key, value in values.items() if key != "profiles"}
+        entries = values.get("profiles")
+        if entries is None:
+            profiles = (Profile.from_mapping(shared),)
+        else:
+            if not isinstance(entries, (list, tuple)) or not entries:
+                raise ValueError("config: profiles must be a non-empty list")
+            profiles = []
+            for index, entry in enumerate(entries):
+                if not isinstance(entry, Mapping):
+                    raise ValueError(f"config: profiles[{index}] must be an object")
+                where = f"config: profile {entry.get('name') or index}"
+                profiles.append(Profile.from_mapping({**shared, **entry}, where))
+            profiles = tuple(profiles)
+        seen: dict[tuple[str, str], Profile] = {}
+        for profile in profiles:
+            key = (profile.note_type, profile.card_type)
+            if key in seen:
+                raise ValueError(
+                    "config: two profiles grade the same cards "
+                    f"({profile.note_type} / {profile.card_type}): "
+                    f"{seen[key].name} and {profile.name}"
+                )
+            seen[key] = profile
+        return cls(profiles=profiles)
+
+    def for_card(self, note_type: str, card_type: str) -> Profile | None:
+        """The profile that grades this card - or None, so the card is left alone."""
+        return next((p for p in self.profiles if p.matches(note_type, card_type)), None)
 
 
 @dataclass(frozen=True)
@@ -179,12 +240,12 @@ def target_block(mapping: tuple[tuple[str, str], ...], fields: Mapping[str, str]
 
 
 def build_prompt(
-    config: Config, rubric: str, fields: Mapping[str, str], situation: str, sentence: str
+    profile: Profile, rubric: str, fields: Mapping[str, str], situation: str, sentence: str
 ) -> str:
     parts = [
-        config.instructions,
+        profile.instructions,
         f"<rubric>\n{rubric.strip()}\n</rubric>",
-        target_block(config.fields, fields),
+        target_block(profile.fields, fields),
     ]
     if situation.strip():
         parts.append(
@@ -223,17 +284,17 @@ def parse(output: str) -> Result:
     )
 
 
-def log_attempt(config: Config, fields: Mapping[str, str], sentence: str, result: Result) -> None:
+def log_attempt(profile: Profile, fields: Mapping[str, str], sentence: str, result: Result) -> None:
     """Append one row to the attempts log, writing the header into a new file."""
-    path = config.log_path
+    path = profile.log_path
     if not path:
         return
     at = dt.datetime.now().astimezone().strftime("%Y-%m-%dT%H:%M:%S%z")
     row = (
         at,
         "card",
-        field_text(fields.get(config.log_target, "")),
-        field_text(fields.get(config.log_sense, "")) if config.log_sense else "",
+        field_text(fields.get(profile.log_target, "")),
+        field_text(fields.get(profile.log_sense, "")) if profile.log_sense else "",
         sentence,
         result.symbol,
         result.log_note(),
@@ -254,9 +315,9 @@ class Check:
     """One grading run. `run` blocks (call it off the UI thread); `cancel` is thread-safe."""
 
     def __init__(
-        self, config: Config, fields: Mapping[str, str], situation: str, sentence: str
+        self, profile: Profile, fields: Mapping[str, str], situation: str, sentence: str
     ) -> None:
-        self.config = config
+        self.profile = profile
         self.fields = dict(fields)
         self.situation = situation
         self.sentence = sentence.strip()
@@ -265,13 +326,13 @@ class Check:
         self._cancelled = False
 
     def argv(self, prompt: str) -> list[str]:
-        return [arg.replace("{prompt}", prompt) for arg in self.config.command]
+        return [arg.replace("{prompt}", prompt) for arg in self.profile.command]
 
     def run(self) -> Result:
         try:
-            with open(self.config.rubric_path, encoding="utf-8") as rubric:
+            with open(self.profile.rubric_path, encoding="utf-8") as rubric:
                 prompt = build_prompt(
-                    self.config, rubric.read(), self.fields, self.situation, self.sentence
+                    self.profile, rubric.read(), self.fields, self.situation, self.sentence
                 )
         except OSError as error:
             raise CheckError(f"cannot read the rubric: {error}") from error
@@ -283,7 +344,7 @@ class Check:
             try:
                 self._proc = subprocess.Popen(
                     argv,
-                    cwd=self.config.repo,
+                    cwd=self.profile.repo,
                     env=_child_env(argv[0]),
                     stdin=subprocess.DEVNULL,
                     stdout=subprocess.PIPE,
@@ -295,11 +356,11 @@ class Check:
         proc = self._proc
 
         try:
-            out, err = proc.communicate(timeout=self.config.timeout_s)
+            out, err = proc.communicate(timeout=self.profile.timeout_s)
         except subprocess.TimeoutExpired:
             _kill(proc)
             proc.communicate()
-            raise CheckError(f"no answer after {self.config.timeout_s:g}s") from None
+            raise CheckError(f"no answer after {self.profile.timeout_s:g}s") from None
 
         if self._cancelled:
             raise CheckCancelledError()

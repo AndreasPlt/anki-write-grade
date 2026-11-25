@@ -3,12 +3,15 @@
 Anki add-on **Write & Grade**: write a sentence on the front of a card and have an agent CLI
 (`pi -p`, `claude -p`, ...) grade it against your rubric.
 
-- On the configured note type and card type, a box sits under the prompt. Enter checks;
-  Esc leaves the box so Space flips again. While an IME is composing, Enter picks the
-  candidate and does not check.
-- The CLI gets your rubric (read fresh on every check), the card fields you configured, the
-  prompt actually on screen, and the sentence. The verdict shows under the box in the
-  rubric's lines; edit and press Enter again to retry.
+- On every note type and card type a profile names, a box sits under the prompt. Enter
+  checks; Esc leaves the box so Space flips again. While an IME is composing, Enter picks
+  the candidate and does not check.
+- Profiles are per note type: each brings its own fields, rubric, log and CLI, so several
+  graded note types live side by side in one deck. The keys beside `profiles` are the
+  defaults all of them start from; a config without `profiles` is one profile.
+- The CLI gets the profile's rubric (read fresh on every check), the card fields that
+  profile configured, the prompt actually on screen, and the sentence. The verdict shows
+  under the box in the rubric's lines; edit and press Enter again to retry.
 - After the flip, your last sentence and its verdict sit between the replayed prompt and the
   reference. Flip without checking and the back is unchanged.
 - Every graded sentence can be appended to an attempts log.
@@ -18,7 +21,8 @@ Anki add-on **Write & Grade**: write a sentence on the front of a card and have 
 
 What it assumes about the template: the box goes after an element with class `.todo` on the
 front and `.replay` on the back, and the prompt on screen is `.quote .rot-on` (or `.quote`).
-Without them the box goes to the bottom of the card and no prompt is sent.
+Without them the box goes to the bottom of the card and no prompt is sent. A template that
+keeps neither still gets the box; only a note type no profile names is left alone.
 
 ## Install
 
@@ -34,12 +38,12 @@ Configure under Tools → Add-ons → Write & Grade → Config; the keys are doc
 
 ## Layout
 
-- `grade.py` — config, prompt, CLI run, parsing the rubric's lines, the log row. No Anki
-  imports, so it is unit-tested and runs outside Anki.
+- `grade.py` — profiles and their config, prompt, CLI run, parsing the rubric's lines, the
+  log row. No Anki imports, so it is unit-tested and runs outside Anki.
 - `web.py`, `check.js`, `check.css` — what is added to the card. Python owns the state; the
   script only draws it and sends the sentence back.
-- `__init__.py` — hooks: adding the box, the sentence message, one check at a time,
-  dropping a result that arrives after the card changed.
+- `__init__.py` — hooks: picking the profile for the card, adding the box, the sentence
+  message, one check at a time, dropping a result that arrives after the card changed.
 
 ## Development
 
