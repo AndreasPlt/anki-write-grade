@@ -195,6 +195,24 @@ def test_the_shipped_config_names_what_to_set():
         grade.Config.from_mapping(values)
 
 
+def test_shipped_defaults_do_not_fight_an_older_saved_config():
+    """Anki hands over config.json with the saved config laid over it (aqt getConfig).
+
+    A profile key shipped in the defaults would therefore appear beside an older saved
+    single-note-type config, and the shipped empty profile would win over the settings
+    that are actually there. The shipped config stays in the single-profile shape.
+    """
+    path = os.path.join(os.path.dirname(grade.__file__), "config.json")
+    with open(path, encoding="utf-8") as shipped:
+        defaults = json.load(shipped)
+    assert "profiles" not in defaults
+    (only,) = grade.Config.from_mapping({**defaults, **BASE}).profiles
+    assert (only.note_type, only.card_type) == ("Chinese Pattern", "Production")
+    # ... and a saved config that does use profiles ignores those leftovers.
+    two = grade.Config.from_mapping({**defaults, "profiles": [BASE, SECOND]})
+    assert [profile.note_type for profile in two.profiles] == ["Chinese Pattern", "ZJU Hanzi"]
+
+
 SECOND = {
     "name": "Hanzi recall",
     "note_type": "ZJU Hanzi",

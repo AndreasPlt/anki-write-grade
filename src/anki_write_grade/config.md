@@ -3,7 +3,9 @@ graded note types side by side. A profile is matched by the note type's name and
 template's name, both exactly as Anki shows them. Every profile is its own grading
 world: its own fields, rubric, log and CLI. Required, at least one. A config with no
 `profiles` at all is read as a single profile, so a config written before profiles
-existed keeps working.
+existed keeps working — that is also why the shipped `config.json` stays in the flat
+shape: Anki lays the saved config over those defaults, and a `profiles` key there would
+shadow the settings already saved.
 
 **name** — what the config calls this profile, only used in messages, e.g. `"Chinese
 pattern"`. Empty: `note type / card type`.
